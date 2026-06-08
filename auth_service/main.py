@@ -18,7 +18,7 @@ import os
 
 app = FastAPI(title="MedMatch - Auth Service")
 
-# ── Configuração ──────────────────────────────────────────────────────────────
+# Config
 SECRET_KEY = os.getenv("JWT_SECRET", "change-me-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
@@ -29,7 +29,7 @@ bearer_scheme = HTTPBearer()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("auth_service")
 
-# ── Banco de dados ────────────────────────────────────────────────────────────
+# BD
 def get_db():
     return mysql.connector.connect(
         host=os.getenv("DB_HOST", "credentials-db"),
@@ -38,7 +38,7 @@ def get_db():
         database=os.getenv("DB_NAME", "medmatch_credentials"),
     )
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
+
 class RegisterRequest(BaseModel):
     nome: str
     email: EmailStr
@@ -55,7 +55,7 @@ class TokenResponse(BaseModel):
     perfil: str
     usuario_id: int
 
-# ── Helpers JWT ───────────────────────────────────────────────────────────────
+# JWT
 def criar_token(usuario_id: int, perfil: str) -> str:
     expira = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": str(usuario_id), "perfil": perfil, "exp": expira}
@@ -70,7 +70,7 @@ def verificar_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_s
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido ou expirado")
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+# Endpoints
 
 @app.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def registrar_usuario(req: RegisterRequest):

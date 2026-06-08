@@ -1,7 +1,6 @@
 """
 MedMatch - API Gateway
 Centraliza entrada de requisições, valida tokens e roteia para os microsserviços internos.
-Nunca expõe os microsserviços diretamente à internet (spoofing mitigation).
 """
 
 from fastapi import FastAPI, Request, HTTPException, Depends
@@ -18,7 +17,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("api_gateway")
 
-# ── URLs internas dos microsserviços (rede privada Kubernetes) ────────────────
+# URLs internas dos microsserviços (rede privada)
 AUTH_SERVICE_URL       = os.getenv("AUTH_SERVICE_URL",       "http://auth-service:8000")
 RECOVERY_SERVICE_URL   = os.getenv("RECOVERY_SERVICE_URL",   "http://recovery-service:8000")
 DOCTORS_SERVICE_URL    = os.getenv("DOCTORS_SERVICE_URL",    "http://doctors-service:8000")
@@ -33,7 +32,7 @@ ROTAS_PUBLICAS = {
     ("GET",  "/doctors/medicos"),
 }
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+
 async def validar_token_interno(token: str) -> dict:
     """Valida JWT no serviço de autenticação (único ponto de validação)"""
     async with httpx.AsyncClient() as client:
@@ -69,7 +68,7 @@ async def proxy(destino: str, request: Request, token: str | None = None) -> JSO
                 params=request.query_params,
                 timeout=10.0,
             )
-            # Nunca expõe erros técnicos detalhados ao cliente (info disclosure)
+            # Coletor de erro
             if resp.status_code >= 500:
                 logger.error(f"Erro interno ao rotear para {destino}: {resp.text}")
                 return JSONResponse(status_code=502, content={"detail": "Serviço temporariamente indisponível"})
@@ -78,7 +77,7 @@ async def proxy(destino: str, request: Request, token: str | None = None) -> JSO
             logger.error(f"Erro de conexão com {destino}: {e}")
             return JSONResponse(status_code=503, content={"detail": "Serviço indisponível"})
 
-# ── Roteador principal ────────────────────────────────────────────────────────
+
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def gateway(
@@ -92,9 +91,11 @@ async def gateway(
     token = credentials.credentials if credentials else None
     usuario = None
 
-    # Rotas públicas não precisam de token
+    # Rotas que não precisam de token
+    path_normalizado = f"/{path.strip('/')}"
+
     eh_publica = any(
-        method == m and f"/{path}".startswith(p)
+        method == m and path_normalizado.startswith(p)
         for m, p in ROTAS_PUBLICAS
     )
 
@@ -106,7 +107,7 @@ async def gateway(
     else:
         logger.info(f"[GATEWAY] {method} /{path} (público)")
 
-    # ── Roteamento ─────────────────────────────────────────────────────────────
+    
     segmentos = path.split("/")
     servico = segmentos[0]
     sub_path = "/".join(segmentos[1:])

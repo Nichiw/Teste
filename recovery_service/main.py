@@ -24,7 +24,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("recovery_service")
 
-# ── Banco de dados ────────────────────────────────────────────────────────────
+# BD
 def get_db():
     return mysql.connector.connect(
         host=os.getenv("DB_HOST", "credentials-db"),
@@ -33,7 +33,7 @@ def get_db():
         database=os.getenv("DB_NAME", "medmatch_credentials"),
     )
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
+
 class SolicitarResetRequest(BaseModel):
     email: EmailStr
 
@@ -44,7 +44,7 @@ class ResetSenhaRequest(BaseModel):
 class MensagemResponse(BaseModel):
     mensagem: str
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+
 def gerar_reset_token(usuario_id: int) -> str:
     expira = datetime.utcnow() + timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": str(usuario_id), "tipo": "reset", "exp": expira}
@@ -59,7 +59,7 @@ def verificar_reset_token(token: str) -> int:
     except JWTError:
         raise HTTPException(status_code=400, detail="Token inválido ou expirado")
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+# Endpoints
 
 @app.post("/solicitar-reset", response_model=MensagemResponse)
 def solicitar_reset(req: SolicitarResetRequest):
@@ -80,10 +80,10 @@ def solicitar_reset(req: SolicitarResetRequest):
         # Em produção: enviar token por e-mail via serviço SMTP ou de notificações
         # send_email(req.email, token)
         logger.info(f"[AUDIT] RESET_SOLICITADO usuario_id={usuario['id']}")
-        # Apenas para desenvolvimento: logar o token
+        # logar o token
         logger.debug(f"[DEV] reset_token={token}")
 
-    # Resposta genérica - não revela se o e-mail existe (RNF01 / info disclosure)
+    # Resposta genérica
     return MensagemResponse(mensagem="Se o e-mail estiver cadastrado, você receberá as instruções em breve.")
 
 

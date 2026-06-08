@@ -1,0 +1,107 @@
+version: "3.9"
+ 
+services:
+ 
+  # ── Bancos de dados ──────────────────────────────────────────────────────────
+ 
+  credentials-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: medmatch_credentials
+      MYSQL_USER: medmatch
+      MYSQL_PASSWORD: medmatch123
+    ports:
+      - "3306:3306"
+    volumes:
+      - credentials_data:/var/lib/mysql
+ 
+  doctors-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: medmatch_doctors
+      MYSQL_USER: medmatch
+      MYSQL_PASSWORD: medmatch123
+    ports:
+      - "3307:3306"
+    volumes:
+      - doctors_data:/var/lib/mysql
+ 
+  scheduling-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: medmatch_scheduling
+      MYSQL_USER: medmatch
+      MYSQL_PASSWORD: medmatch123
+    ports:
+      - "3308:3306"
+    volumes:
+      - scheduling_data:/var/lib/mysql
+ 
+  # ── Microsserviços ───────────────────────────────────────────────────────────
+ 
+  auth-service:
+    build: ./auth_service
+    environment:
+      DB_HOST: credentials-db
+      DB_USER: medmatch
+      DB_PASSWORD: medmatch123
+      DB_NAME: medmatch_credentials
+      JWT_SECRET: troque-em-producao
+    depends_on:
+      - credentials-db
+ 
+  recovery-service:
+    build: ./recovery_service
+    environment:
+      DB_HOST: credentials-db
+      DB_USER: medmatch
+      DB_PASSWORD: medmatch123
+      DB_NAME: medmatch_credentials
+      JWT_SECRET: troque-em-producao
+    depends_on:
+      - credentials-db
+ 
+  doctors-service:
+    build: ./doctors_service
+    environment:
+      DB_HOST: doctors-db
+      DB_USER: medmatch
+      DB_PASSWORD: medmatch123
+      DB_NAME: medmatch_doctors
+      JWT_SECRET: troque-em-producao
+    depends_on:
+      - doctors-db
+ 
+  schedule-service:
+    build: ./schedule_service
+    environment:
+      DB_HOST: scheduling-db
+      DB_USER: medmatch
+      DB_PASSWORD: medmatch123
+      DB_NAME: medmatch_scheduling
+      JWT_SECRET: troque-em-producao
+    depends_on:
+      - scheduling-db
+ 
+  gateway:
+    build: ./gateway
+    ports:
+      - "8080:8000"
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8000
+      RECOVERY_SERVICE_URL: http://recovery-service:8000
+      DOCTORS_SERVICE_URL: http://doctors-service:8000
+      SCHEDULING_SERVICE_URL: http://scheduling-service:8000
+    depends_on:
+      - auth-service
+      - recovery-service
+      - doctors-service
+      - schedule-service
+ 
+volumes:
+  credentials_data:
+  doctors_data:
+  scheduling_data:

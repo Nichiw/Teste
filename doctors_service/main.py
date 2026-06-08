@@ -25,7 +25,7 @@ app = FastAPI(title="MedMatch - Doctors & Specialties Service")
 SECRET_KEY = os.getenv("JWT_SECRET", "change-me-in-production")
 bearer_scheme = HTTPBearer(auto_error=False)
 
-# Rate limiting - RF DoS: listagem é pública, limitar por IP
+# Rate Limiter
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 
@@ -36,7 +36,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("doctors_service")
 
-# ── Banco de dados ────────────────────────────────────────────────────────────
+# BD
 def get_db():
     return mysql.connector.connect(
         host=os.getenv("DB_HOST", "doctors-db"),
@@ -45,7 +45,7 @@ def get_db():
         database=os.getenv("DB_NAME", "medmatch_doctors"),
     )
 
-# ── Auth helpers ──────────────────────────────────────────────────────────────
+# Autenticação
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     if not credentials:
         raise HTTPException(status_code=401, detail="Token necessário")
@@ -60,7 +60,7 @@ def exigir_admin(usuario: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
     return usuario
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
+# BD
 class EspecialidadeCreate(BaseModel):
     nome: str
 
@@ -80,7 +80,7 @@ class MedicoUpdate(BaseModel):
     telefone_profissional: Optional[str] = None
     especialidade_id: Optional[int] = None
 
-# ── Especialidades ────────────────────────────────────────────────────────────
+# Especialidades
 
 @app.get("/especialidades")
 @limiter.limit("60/minute")
@@ -141,7 +141,7 @@ def remover_especialidade(esp_id: int, admin: dict = Depends(exigir_admin)):
     cursor.close()
     db.close()
 
-# ── Médicos ───────────────────────────────────────────────────────────────────
+# Médicos
 
 @app.get("/medicos")
 @limiter.limit("60/minute")

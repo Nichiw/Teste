@@ -29,7 +29,7 @@ app = FastAPI(title="MedMatch - Scheduling Service")
 SECRET_KEY = os.getenv("JWT_SECRET", "change-me-in-production")
 bearer_scheme = HTTPBearer()
 
-# Rate limiting por token (previne flood de agendamentos - DoS)
+# Rate limiting
 def get_token_key(request: Request):
     auth = request.headers.get("Authorization", "")
     return auth if auth else get_remote_address(request)
@@ -44,7 +44,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("scheduling_service")
 
-# ── Banco de dados ────────────────────────────────────────────────────────────
+# BD
 def get_db():
     return mysql.connector.connect(
         host=os.getenv("DB_HOST", "scheduling-db"),
@@ -53,7 +53,7 @@ def get_db():
         database=os.getenv("DB_NAME", "medmatch_scheduling"),
     )
 
-# ── Auth helpers ──────────────────────────────────────────────────────────────
+
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     try:
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
@@ -66,7 +66,7 @@ def exigir_medico(usuario: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Acesso restrito a médicos")
     return usuario
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
+
 class AgendarRequest(BaseModel):
     medico_id: int
     horario_id: int  # ID do slot de horário disponível
@@ -77,7 +77,7 @@ class RemarcarRequest(BaseModel):
 class StatusRequest(BaseModel):
     status: str  # "confirmada" | "concluida" | "falta"
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+# Endpoints
 
 @app.get("/horarios/{medico_id}")
 def consultar_horarios(medico_id: int, data: Optional[date] = None):
