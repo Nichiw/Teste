@@ -79,7 +79,8 @@ def registrar_usuario(req: RegisterRequest):
     if req.perfil not in perfis_validos:
         raise HTTPException(status_code=400, detail="Perfil inválido")
 
-    hash_senha = pwd_context.hash(req.senha)
+    senha_tratada = req.senha.strip()[:72]
+    hash_senha = pwd_context.hash(senha_tratada)
     db = get_db()
     cursor = db.cursor()
     try:
@@ -109,7 +110,7 @@ def login(req: LoginRequest):
     cursor.close()
     db.close()
 
-    if not usuario or not pwd_context.verify(req.senha, usuario["senha_hash"]):
+    if not usuario or not pwd_context.verify(req.senha.strip()[:72], usuario["senha_hash"]):
         logger.warning(f"[AUDIT] LOGIN_FALHOU email={req.email}")
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
 

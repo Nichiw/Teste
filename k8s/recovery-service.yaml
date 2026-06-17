@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recovery-service
+  labels:
+    app: recovery-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: recovery-service
+  template:
+    metadata:
+      labels:
+        app: recovery-service
+    spec:
+      containers:
+        - name: recovery-service
+          image: recovery-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DB_HOST
+              value: credentials-db
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: password
+            - name: DB_NAME
+              value: medmatch_credentials
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recovery-service
+spec:
+  selector:
+    app: recovery-service
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP

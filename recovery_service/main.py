@@ -1,11 +1,13 @@
 """
-MedMatch - Serviço de Recuperação de Senha
-RF03 - Recuperação de Senha
-RNF01 - Tokens temporários com expiração
-RNF04 - Auditoria de operações
+MedMatch - Servico de Recuperacao de Senha
+RF03 - Recuperacao de Senha
+RNF01 - Tokens temporarios com expiracao
+RNF04 - Auditoria de operacoes
 """
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import HTTPException, status
 from pydantic import BaseModel, EmailStr
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -17,6 +19,14 @@ import os
 
 app = FastAPI(title="MedMatch - Password Recovery Service")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 SECRET_KEY = os.getenv("JWT_SECRET", "change-me-in-production")
 RESET_TOKEN_EXPIRE_MINUTES = 30
 
@@ -24,7 +34,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("recovery_service")
 
-# BD
+# ── Banco de dados ────────────────────────────────────────────────────────────
 def get_db():
     return mysql.connector.connect(
         host=os.getenv("DB_HOST", "credentials-db"),
@@ -33,7 +43,7 @@ def get_db():
         database=os.getenv("DB_NAME", "medmatch_credentials"),
     )
 
-
+# ── Schemas ───────────────────────────────────────────────────────────────────
 class SolicitarResetRequest(BaseModel):
     email: EmailStr
 
@@ -44,7 +54,7 @@ class ResetSenhaRequest(BaseModel):
 class MensagemResponse(BaseModel):
     mensagem: str
 
-
+# ── Helpers ───────────────────────────────────────────────────────────────────
 def gerar_reset_token(usuario_id: int) -> str:
     expira = datetime.utcnow() + timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": str(usuario_id), "tipo": "reset", "exp": expira}
@@ -54,19 +64,19 @@ def verificar_reset_token(token: str) -> int:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         if payload.get("tipo") != "reset":
-            raise ValueError("Tipo de token inválido")
+            raise ValueError("Tipo de token invalido")
         return int(payload["sub"])
     except JWTError:
-        raise HTTPException(status_code=400, detail="Token inválido ou expirado")
+        raise HTTPException(status_code=400, detail="Token invalido ou expirado")
 
-# Endpoints
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.post("/solicitar-reset", response_model=MensagemResponse)
 def solicitar_reset(req: SolicitarResetRequest):
     """
-    RF03 - Solicita recuperação de senha.
-    Gera um token temporário e, em produção, envia por e-mail.
-    Responde sempre com sucesso para não vazar se o e-mail existe.
+    RF03 - Solicita recuperacao de senha.
+    Gera um token temporario e, em producao, envia por e-mail.
+    Responde sempre com sucesso para nao vazar se o e-mail existe.
     """
     db = get_db()
     cursor = db.cursor(dictionary=True)
@@ -77,19 +87,19 @@ def solicitar_reset(req: SolicitarResetRequest):
 
     if usuario:
         token = gerar_reset_token(usuario["id"])
-        # Em produção: enviar token por e-mail via serviço SMTP ou de notificações
+        # Em producao: enviar token por e-mail via servico SMTP ou de notificacoes
         # send_email(req.email, token)
         logger.info(f"[AUDIT] RESET_SOLICITADO usuario_id={usuario['id']}")
-        # logar o token
+        # Apenas para desenvolvimento: logar o token
         logger.debug(f"[DEV] reset_token={token}")
 
-    # Resposta genérica
-    return MensagemResponse(mensagem="Se o e-mail estiver cadastrado, você receberá as instruções em breve.")
+    # Resposta generica - nao revela se o e-mail existe (RNF01 / info disclosure)
+    return MensagemResponse(mensagem="Se o e-mail estiver cadastrado, voce recebera as instrucoes em breve.")
 
 
 @app.post("/confirmar-reset", response_model=MensagemResponse)
 def confirmar_reset(req: ResetSenhaRequest):
-    """RF03 - Confirma o reset com token temporário e define nova senha"""
+    """RF03 - Confirma o reset com token temporario e define nova senha"""
     if len(req.nova_senha) < 8:
         raise HTTPException(status_code=400, detail="A senha deve ter ao menos 8 caracteres")
 
@@ -108,7 +118,7 @@ def confirmar_reset(req: ResetSenhaRequest):
     db.close()
 
     if rows == 0:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        raise HTTPException(status_code=404, detail="Usuario nao encontrado")
 
     logger.info(f"[AUDIT] SENHA_REDEFINIDA usuario_id={usuario_id}")
     return MensagemResponse(mensagem="Senha redefinida com sucesso.")
