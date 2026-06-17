@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: credentials-db-init
+data:
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS usuarios (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nome VARCHAR(150) NOT NULL,
+        email VARCHAR(150) NOT NULL UNIQUE,
+        senha_hash VARCHAR(255) NOT NULL,
+        perfil ENUM('paciente', 'medico', 'administrador') NOT NULL,
+        criado_em DATETIME NOT NULL DEFAULT NOW(),
+        atualizado_em DATETIME NULL
+    );
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doctors-db-init
+data:
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS especialidades (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nome VARCHAR(100) NOT NULL UNIQUE
+    );
+    CREATE TABLE IF NOT EXISTS medicos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nome VARCHAR(150) NOT NULL,
+        email_profissional VARCHAR(150) NOT NULL UNIQUE,
+        telefone_profissional VARCHAR(20) NULL,
+        especialidade_id INT NOT NULL,
+        crm VARCHAR(20) NOT NULL UNIQUE,
+        FOREIGN KEY (especialidade_id) REFERENCES especialidades(id)
+    );
+    INSERT IGNORE INTO especialidades (nome) VALUES
+        ('Cardiologia'),('Dermatologia'),('Ortopedia'),('Pediatria'),('Clinica Geral');
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scheduling-db-init
+data:
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS horarios (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        medico_id INT NOT NULL,
+        data_hora DATETIME NOT NULL,
+        disponivel BOOLEAN NOT NULL DEFAULT TRUE,
+        UNIQUE KEY uq_medico_horario (medico_id, data_hora)
+    );
+    CREATE TABLE IF NOT EXISTS consultas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        paciente_id INT NOT NULL,
+        medico_id INT NOT NULL,
+        horario_id INT NOT NULL,
+        status ENUM('agendada','confirmada','concluida','cancelada','falta') NOT NULL DEFAULT 'agendada',
+        observacoes TEXT NULL,
+        criado_em DATETIME NOT NULL DEFAULT NOW(),
+        atualizado_em DATETIME NULL,
+        FOREIGN KEY (horario_id) REFERENCES horarios(id)
+    );

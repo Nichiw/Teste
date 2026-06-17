@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  labels:
+    app: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: gateway:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: AUTH_SERVICE_URL
+              value: http://auth-service:8000
+            - name: RECOVERY_SERVICE_URL
+              value: http://recovery-service:8000
+            - name: DOCTORS_SERVICE_URL
+              value: http://doctors-service:8000
+            - name: SCHEDULING_SERVICE_URL
+              value: http://scheduling-service:8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+spec:
+  selector:
+    app: gateway
+  ports:
+    - port: 8080
+      targetPort: 8000
+      nodePort: 30080
+  type: NodePort  # único serviço exposto externamente
