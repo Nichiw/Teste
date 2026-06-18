@@ -39,6 +39,7 @@ app.add_middleware(
 
 SECRET_KEY = os.getenv("JWT_SECRET", "change-me-in-production")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
+DOCTORS_SERVICE_URL = os.getenv("DOCTORS_SERVICE_URL", "http://doctors-service:8000")
 bearer_scheme = HTTPBearer()
 
 # Rate limiting por token (previne flood de agendamentos - DoS)
@@ -250,11 +251,27 @@ def buscar_usuario_auth(usuario_id: int, token: str) -> dict:
         logger.warning(f"Nao foi possivel buscar dados do paciente {usuario_id}: {e}")
     return {"nome": f"Paciente #{usuario_id}", "email": "-", "telefone": "-"}
 
+def resolver_medico_id(usuario_id: int, token: str) -> int:
+    """Busca o medico_id real no doctors-service a partir do usuario_id"""
+    try:
+        resp = httpx.get(
+            f"{DOCTORS_SERVICE_URL}/medicos/por-usuario/{usuario_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5.0,
+        )
+        if resp.status_code == 200:
+            return resp.json()["id"]
+    except Exception as e:
+        logger.warning(f"Nao foi possivel resolver medico_id para usuario {usuario_id}: {e}")
+    raise HTTPException(status_code=404, detail="Medico nao encontrado para este usuario. Verifique se o cadastro foi feito pelo admin.")
+
+
 
 @app.get("/agenda")
 def ver_agenda(request: Request, usuario: dict = Depends(exigir_medico)):
     """RF10 - Medico visualiza sua propria agenda com dados do paciente"""
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    medico_id = resolver_medico_id(usuario["usuario_id"], token)
     db = get_db()
     cursor = db.cursor(dictionary=True)
     cursor.execute(
@@ -263,7 +280,7 @@ def ver_agenda(request: Request, usuario: dict = Depends(exigir_medico)):
            JOIN horarios h ON c.horario_id = h.id
            WHERE c.medico_id = %s AND c.status NOT IN ('cancelada')
            ORDER BY h.data_hora""",
-        (usuario["usuario_id"],),
+        (medico_id,),
     )
     consultas = cursor.fetchall()
     cursor.close()
@@ -292,7 +309,7 @@ def ver_agenda(request: Request, usuario: dict = Depends(exigir_medico)):
 
 
 @app.patch("/consultas/{consulta_id}/status")
-def atualizar_status(consulta_id: int, req: StatusRequest, usuario: dict = Depends(exigir_medico)):
+def atualizar_status(consulta_id: int, req: StatusRequest, request: Request, usuario: dict = Depends(exigir_medico)):
     """RF11 - Medico atualiza status da consulta (confirmada, concluida, falta)"""
     status_validos = {"confirmada", "concluida", "falta"}
     if req.status not in status_validos:
@@ -307,8 +324,11 @@ def atualizar_status(consulta_id: int, req: StatusRequest, usuario: dict = Depen
         raise HTTPException(status_code=404, detail="Consulta nao encontrada")
 
     # Medico so altera suas proprias consultas (tampering)
-    if usuario["perfil"] == "medico" and consulta["medico_id"] != usuario["usuario_id"]:
-        raise HTTPException(status_code=403, detail="Sem permissao para alterar esta consulta")
+    if usuario["perfil"] == "medico":
+        token2 = request.headers.get("Authorization", "").replace("Bearer ", "")
+        medico_id_real = resolver_medico_id(usuario["usuario_id"], token2)
+        if consulta["medico_id"] != medico_id_real:
+            raise HTTPException(status_code=403, detail="Sem permissao para alterar esta consulta")
 
     cursor.execute(
         "UPDATE consultas SET status = %s, atualizado_em = NOW() WHERE id = %s",
@@ -322,13 +342,13 @@ def atualizar_status(consulta_id: int, req: StatusRequest, usuario: dict = Depen
 
 
 @app.get("/consultas/minhas")
-def minhas_consultas(usuario: dict = Depends(get_current_user)):
-    """RF07/RF08 - Paciente visualiza suas proprias consultas"""
+def minhas_consultas(request: Request, usuario: dict = Depends(get_current_user)):
+    """RF07/RF08 - Paciente visualiza suas proprias consultas com dados do medico"""
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
     db = get_db()
     cursor = db.cursor(dictionary=True)
     cursor.execute(
-        """SELECT c.id, h.data_hora, c.status, c.medico_id,
-                  c.observacoes
+        """SELECT c.id, h.data_hora, c.status, c.medico_id, c.horario_id, c.observacoes
            FROM consultas c
            JOIN horarios h ON c.horario_id = h.id
            WHERE c.paciente_id = %s
@@ -338,7 +358,31 @@ def minhas_consultas(usuario: dict = Depends(get_current_user)):
     consultas = cursor.fetchall()
     cursor.close()
     db.close()
-    return consultas
+
+    # Busca nome e especialidade dos medicos unicos no doctors_service
+    ids_unicos = list({c["medico_id"] for c in consultas})
+    medicos = {}
+    for mid in ids_unicos:
+        try:
+            resp = httpx.get(f"{DOCTORS_SERVICE_URL}/medicos/{mid}", timeout=5.0)
+            if resp.status_code == 200:
+                medicos[mid] = resp.json()
+        except Exception:
+            pass
+
+    resultado = []
+    for c in consultas:
+        m = medicos.get(c["medico_id"], {})
+        resultado.append({
+            "id": c["id"],
+            "data_hora": c["data_hora"],
+            "status": c["status"],
+            "horario_id": c["horario_id"],
+            "medico_nome": m.get("nome", f"Medico #{c['medico_id']}"),
+            "especialidade": m.get("especialidade", "-"),
+            "observacoes": c["observacoes"],
+        })
+    return resultado
 
 
 @app.get("/health")
@@ -346,15 +390,35 @@ def health():
     return {"status": "ok", "service": "scheduling"}
 
 
+
+@app.get("/horarios/meus")
+def meus_horarios(request: Request, usuario: dict = Depends(exigir_medico)):
+    """Medico busca seus proprios horarios usando usuario_id do token"""
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    medico_id = resolver_medico_id(usuario["usuario_id"], token)
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT id, data_hora, disponivel FROM horarios WHERE medico_id = %s ORDER BY data_hora",
+        (medico_id,),
+    )
+    horarios = cursor.fetchall()
+    cursor.close()
+    db.close()
+    return horarios
+
+
 @app.post("/horarios", status_code=201)
-def criar_horario(req: CriarHorarioRequest, usuario: dict = Depends(exigir_medico)):
+def criar_horario(req: CriarHorarioRequest, request: Request, usuario: dict = Depends(exigir_medico)):
     """Medico cadastra seus proprios horarios disponiveis"""
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    medico_id = resolver_medico_id(usuario["usuario_id"], token)
     db = get_db()
     cursor = db.cursor()
     try:
         cursor.execute(
             "INSERT INTO horarios (medico_id, data_hora, disponivel) VALUES (%s, %s, TRUE)",
-            (usuario["usuario_id"], req.data_hora),
+            (medico_id, req.data_hora),
         )
         db.commit()
         horario_id = cursor.lastrowid
@@ -377,7 +441,7 @@ def remover_horario(horario_id: int, usuario: dict = Depends(exigir_medico)):
 
     if not horario:
         raise HTTPException(status_code=404, detail="Horario nao encontrado")
-    if usuario["perfil"] == "medico" and horario["medico_id"] != usuario["usuario_id"]:
+    if usuario["perfil"] == "medico" and horario["medico_id"] != usuario.get("medico_id", usuario["usuario_id"]):
         raise HTTPException(status_code=403, detail="Sem permissao para remover este horario")
     if not horario["disponivel"]:
         raise HTTPException(status_code=400, detail="Horario ja agendado, cancele a consulta antes de remover")

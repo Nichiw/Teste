@@ -83,12 +83,14 @@ class MedicoCreate(BaseModel):
     telefone_profissional: Optional[str] = None
     especialidade_id: int
     crm: str
+    usuario_id: Optional[int] = None
 
 class MedicoUpdate(BaseModel):
     nome: Optional[str] = None
     email_profissional: Optional[EmailStr] = None
     telefone_profissional: Optional[str] = None
     especialidade_id: Optional[int] = None
+    usuario_id: Optional[int] = None
 
 # ── Especialidades ────────────────────────────────────────────────────────────
 
@@ -201,6 +203,41 @@ def detalhar_medico(medico_id: int, request: Request):
     return medico
 
 
+@app.post("/medicos/auto-registro", status_code=201)
+def auto_registro_medico(req: MedicoCreate):
+    """Chamado internamente pelo auth_service quando um medico se registra"""
+    db = get_db()
+    cursor = db.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO medicos (usuario_id, nome, email_profissional, telefone_profissional, especialidade_id, crm) VALUES (%s,%s,%s,%s,%s,%s)",
+            (req.usuario_id, req.nome, req.email_profissional, req.telefone_profissional, req.especialidade_id, req.crm),
+        )
+        db.commit()
+        medico_id = cursor.lastrowid
+        logger.info(f"[AUDIT] MEDICO_AUTO_REGISTRADO id={medico_id} usuario_id={req.usuario_id}")
+        return {"id": medico_id, "nome": req.nome}
+    except mysql.connector.IntegrityError:
+        raise HTTPException(status_code=409, detail="CRM ou e-mail ja cadastrado")
+    finally:
+        cursor.close()
+        db.close()
+
+
+@app.get("/medicos/por-usuario/{usuario_id}")
+def medico_por_usuario(usuario_id: int):
+    """Retorna o medico_id a partir do usuario_id do credentials-db"""
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    cursor.execute("SELECT id FROM medicos WHERE usuario_id = %s", (usuario_id,))
+    medico = cursor.fetchone()
+    cursor.close()
+    db.close()
+    if not medico:
+        raise HTTPException(status_code=404, detail="Medico nao encontrado para este usuario")
+    return medico
+
+
 @app.post("/medicos", status_code=201)
 def cadastrar_medico(req: MedicoCreate, admin: dict = Depends(exigir_admin)):
     """RF12 - Cadastro de medico (somente Admin)"""
@@ -208,8 +245,8 @@ def cadastrar_medico(req: MedicoCreate, admin: dict = Depends(exigir_admin)):
     cursor = db.cursor()
     try:
         cursor.execute(
-            "INSERT INTO medicos (nome, email_profissional, telefone_profissional, especialidade_id, crm) VALUES (%s,%s,%s,%s,%s)",
-            (req.nome, req.email_profissional, req.telefone_profissional, req.especialidade_id, req.crm),
+            "INSERT INTO medicos (nome, email_profissional, telefone_profissional, especialidade_id, crm, usuario_id) VALUES (%s,%s,%s,%s,%s,%s)",
+            (req.nome, req.email_profissional, req.telefone_profissional, req.especialidade_id, req.crm, req.usuario_id),
         )
         db.commit()
         medico_id = cursor.lastrowid

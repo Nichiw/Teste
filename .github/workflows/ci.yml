@@ -1,0 +1,114 @@
+name: MedMatch CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+
+  # ── SAST - Analise estatica do codigo Python (Bandit) ──────────────────────
+  sast:
+    name: SAST - Bandit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar Bandit
+        run: pip install bandit
+
+      - name: Rodar Bandit em todos os servicos
+        run: |
+          bandit -r auth_service/main.py \
+                    recovery_service/main.py \
+                    doctor_service/main.py \
+                    schedule_service/main.py \
+                    gateway/main.py \
+                 -ll -f txt
+        # -ll = reporta apenas severidade MEDIUM e HIGH
+        # Nao falha o build em LOW para nao bloquear desenvolvimento
+
+  # ── SCA - Analise de dependencias (Safety) ─────────────────────────────────
+  sca:
+    name: SCA - Safety
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar Safety
+        run: pip install safety
+
+      - name: Verificar vulnerabilidades - auth_service
+        run: safety check -r auth_service/requirements.txt --continue-on-error
+
+      - name: Verificar vulnerabilidades - recovery_service
+        run: safety check -r recovery_service/requirements.txt --continue-on-error
+
+      - name: Verificar vulnerabilidades - doctor_service
+        run: safety check -r doctor_service/requirements.txt --continue-on-error
+
+      - name: Verificar vulnerabilidades - schedule_service
+        run: safety check -r schedule_service/requirements.txt --continue-on-error
+
+      - name: Verificar vulnerabilidades - gateway
+        run: safety check -r gateway/requirements.txt --continue-on-error
+
+  # ── Build das imagens Docker ───────────────────────────────────────────────
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [sast, sca]
+    steps:
+      - name: Checkout codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build auth-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./auth_service
+          push: false
+          tags: auth-service:latest
+
+      - name: Build recovery-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./recovery_service
+          push: false
+          tags: recovery-service:latest
+
+      - name: Build doctors-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./doctor_service
+          push: false
+          tags: doctors-service:latest
+
+      - name: Build scheduling-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./schedule_service
+          push: false
+          tags: scheduling-service:latest
+
+      - name: Build gateway
+        uses: docker/build-push-action@v5
+        with:
+          context: ./gateway
+          push: false
+          tags: gateway:latest

@@ -1,4 +1,3 @@
--- doctors-db: usado por doctors_service
 CREATE TABLE IF NOT EXISTS especialidades (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nome VARCHAR(100) NOT NULL UNIQUE
@@ -6,6 +5,7 @@ CREATE TABLE IF NOT EXISTS especialidades (
 
 CREATE TABLE IF NOT EXISTS medicos (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    usuario_id INT NULL UNIQUE,
     nome VARCHAR(150) NOT NULL,
     email_profissional VARCHAR(150) NOT NULL UNIQUE,
     telefone_profissional VARCHAR(20) NULL,
@@ -15,8 +15,4 @@ CREATE TABLE IF NOT EXISTS medicos (
 );
 
 INSERT IGNORE INTO especialidades (nome) VALUES
-    ('Cardiologia'),
-    ('Dermatologia'),
-    ('Ortopedia'),
-    ('Pediatria'),
-    ('Clinica Geral');
+    ('Cardiologia'),('Dermatologia'),('Ortopedia'),('Pediatria'),('Clinica Geral');
