@@ -2,9 +2,9 @@ name: MedMatch CI
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "meldels"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "meldels"]
 
 jobs:
 
